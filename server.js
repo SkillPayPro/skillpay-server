@@ -2,9 +2,9 @@ const https = require('https');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+const API_KEY = process.env.ANTHROPIC_API_KEY || '';
 
-function callAnthropic(apiKey, model, system, prompt, maxTokens) {
+function callAnthropic(model, system, prompt, maxTokens) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
       model: model,
@@ -19,7 +19,7 @@ function callAnthropic(apiKey, model, system, prompt, maxTokens) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
+        'x-api-key': API_KEY,
         'anthropic-version': '2023-06-01',
         'Content-Length': Buffer.byteLength(body)
       }
@@ -30,10 +30,10 @@ function callAnthropic(apiKey, model, system, prompt, maxTokens) {
         try {
           const parsed = JSON.parse(data);
           if (res.statusCode !== 200) {
-            reject(new Error('Anthropic ' + res.statusCode + ': ' + (parsed.error && parsed.error.message ? parsed.error.message : data)));
+            reject(new Error('Anthropic ' + res.statusCode + ': ' + (parsed.error?.message || data.substring(0, 200))));
             return;
           }
-          const text = parsed.content && parsed.content[0] && parsed.content[0].text ? parsed.content[0].text : '';
+          const text = parsed.content?.[0]?.text || '';
           resolve(text);
         } catch(e) {
           reject(new Error('Parse error: ' + e.message));
@@ -47,14 +47,16 @@ function callAnthropic(apiKey, model, system, prompt, maxTokens) {
 }
 
 const server = http.createServer(async (req, res) => {
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
 
-  if (req.method === 'OPTIONS') {
-    res.writeHead(200);
-    res.end();
+  if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
+
+  // Health check
+  if (req.method === 'GET' && req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', hasKey: !!API_KEY }));
     return;
   }
 
@@ -64,38 +66,35 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (!API_KEY) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'ANTHROPIC_API_KEY niet ingesteld op Railway' }));
+    return;
+  }
+
   let body = '';
   req.on('data', chunk => body += chunk);
   req.on('end', async () => {
     try {
       const b = JSON.parse(body);
-      const apiKey = req.headers['x-api-key'] || '';
-      if (!apiKey) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Geen API key' }));
-        return;
-      }
-
-      const type = b.type || 'text'; // 'text' of 'website'
+      const type = b.type || 'text';
       const prompt = (b.prompt || '').substring(0, 60000);
       const system = b.system || 'You are a helpful assistant.';
-      
+
       let model, maxTokens;
       if (type === 'website') {
-        model = 'claude-haiku-4-5-20251001';
-        maxTokens = 8000;
-      } else {
-        // Fiverr/Malt: gebruik Sonnet voor kwaliteit
         model = 'claude-sonnet-4-6';
-        maxTokens = 6000;
+        maxTokens = 16000;
+      } else {
+        model = 'claude-sonnet-4-6';
+        maxTokens = 8000;
       }
 
       console.log('[' + new Date().toISOString() + '] type=' + type + ' model=' + model);
 
-      const text = await callAnthropic(apiKey, model, system, prompt, maxTokens);
-      
+      const text = await callAnthropic(model, system, prompt, maxTokens);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ text: text }));
+      res.end(JSON.stringify({ text }));
     } catch(e) {
       console.error('Error:', e.message);
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -105,5 +104,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log('SkillPay AI Server draait op poort ' + PORT);
+  console.log('SkillPay AI Server running on port ' + PORT + ' | API key: ' + (API_KEY ? 'SET' : 'MISSING'));
 });
