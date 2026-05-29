@@ -95,7 +95,27 @@ const server = http.createServer(async (req, res) => {
 
       console.log('[' + new Date().toISOString() + '] type=' + type + ' model=' + model + ' tokens=' + maxTokens);
 
-      const text = await callAnthropic(model, system, prompt, maxTokens);
+      let text = await callAnthropic(model, system, prompt, maxTokens);
+      
+      // Post-process website HTML: fix opacity:0 buiten keyframes
+      if (type === 'website' && text.includes('<style')) {
+        text = text.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, function(match, css) {
+          var kf = [];
+          var safe = css.replace(/@(?:-webkit-|-moz-|-o-)?keyframes\s+\S+\s*\{(?:[^{}]*|\{[^{}]*\})*\}/g, function(k) {
+            kf.push(k); return '/*KF' + (kf.length-1) + '*/';
+          });
+          safe = safe.replace(/opacity\s*:\s*0/g, 'opacity:1');
+          safe = safe.replace(/visibility\s*:\s*hidden/g, 'visibility:visible');
+          safe = safe.replace(/\/\*KF(\d+)\*\//g, function(_, i) { return kf[parseInt(i)]; });
+          return match.replace(css, safe);
+        });
+        // Fix JS opacity=0
+        text = text.replace(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/gi, function(match, js) {
+          return match.replace(js, js.replace(/\.style\.opacity\s*=\s*['"]0['"]/g, '.style.opacity="1"')
+                                       .replace(/\.style\.visibility\s*=\s*['"]hidden['"]/g, '.style.visibility="visible"'));
+        });
+      }
+      
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ text }));
     } catch(e) {
@@ -109,3 +129,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '0.0.0.0', () => {
   console.log('SkillPay AI Server running on port ' + PORT + ' | API key: ' + (API_KEY ? 'SET' : 'MISSING'));
 });
+
+// Dit wordt niet gebruikt — de fix zit in de functie hieronder
