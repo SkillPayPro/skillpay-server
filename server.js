@@ -33,8 +33,7 @@ function callAnthropic(model, system, prompt, maxTokens) {
             reject(new Error('Anthropic ' + res.statusCode + ': ' + (parsed.error?.message || data.substring(0, 200))));
             return;
           }
-          const text = parsed.content?.[0]?.text || '';
-          resolve(text);
+          resolve(parsed.content?.[0]?.text || '');
         } catch(e) {
           reject(new Error('Parse error: ' + e.message));
         }
@@ -51,12 +50,16 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
 
-  if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
 
-  // Health check
-  if (req.method === 'GET' && req.url === '/') {
+  // Health check — Railway pings dit
+  if (req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', hasKey: !!API_KEY }));
+    res.end(JSON.stringify({ status: 'ok', hasKey: !!API_KEY, version: '3' }));
     return;
   }
 
@@ -90,7 +93,7 @@ const server = http.createServer(async (req, res) => {
         maxTokens = 8000;
       }
 
-      console.log('[' + new Date().toISOString() + '] type=' + type + ' model=' + model);
+      console.log('[' + new Date().toISOString() + '] type=' + type + ' model=' + model + ' tokens=' + maxTokens);
 
       const text = await callAnthropic(model, system, prompt, maxTokens);
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -103,6 +106,6 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log('SkillPay AI Server running on port ' + PORT + ' | API key: ' + (API_KEY ? 'SET' : 'MISSING'));
 });
