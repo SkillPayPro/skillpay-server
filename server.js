@@ -97,38 +97,18 @@ const server = http.createServer(async (req, res) => {
 
       let text = await callAnthropic(model, system, prompt, maxTokens);
       
-      // Post-process website HTML
+      // Post-process website HTML: injecteer veiligheids-CSS die altijd wint
       if (type === 'website') {
-        // 1. Fix opacity:0 buiten keyframes
-        if (text.includes('<style')) {
-          text = text.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, function(match, css) {
-            var kf = [];
-            var safe = css.replace(/@(?:-webkit-|-moz-|-o-)?keyframes[\s\S]*?\{[\s\S]*?\}\s*\}/g, function(k) {
-              kf.push(k); return '/*KF' + (kf.length-1) + '*/';
-            });
-            safe = safe.replace(/opacity\s*:\s*0/g, 'opacity:1');
-            safe = safe.replace(/visibility\s*:\s*hidden/g, 'visibility:visible');
-            safe = safe.replace(/\/\*KF(\d+)\*\//g, function(_, i) { return kf[parseInt(i)]; });
-            return match.replace(css, safe);
-          });
+        var safetyCSS = '<style id="_sp_safety">' +
+          'body,section,main,header,article,div,h1,h2,h3,h4,h5,h6,p,span,a,ul,ol,li,nav{opacity:1!important;visibility:visible!important}' +
+          '#preloader,#loader,#loading,#splash,.preloader,.loader,.loading,.splash,.intro-screen,.intro{display:none!important}' +
+          'canvas{z-index:-1!important}' +
+          '</style>';
+        if (text.includes('</head>')) {
+          text = text.replace('</head>', safetyCSS + '</head>');
+        } else {
+          text = safetyCSS + text;
         }
-        // 2. Fix JS opacity=0
-        text = text.replace(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/gi, function(match, js) {
-          var fixed = js
-            .replace(/\.style\.opacity\s*=\s*['"]0['"]/g, '.style.opacity="1"')
-            .replace(/\.style\.visibility\s*=\s*['"]hidden['"]/g, '.style.visibility="visible"');
-          return match.replace(js, fixed);
-        });
-        // 3. Preloader altijd na max 2 seconden verwijderen
-        var preloaderFix = '<script id="_sp_preload_fix">(function(){' +
-          'function killPreloader(){' +
-          'var sels=["#preloader","#loader","#loading","#splash",".preloader",".loader",".loading",".splash",".intro-screen","#intro"];' +
-          'sels.forEach(function(s){var el=document.querySelector(s);if(el)el.style.cssText="display:none!important";});' +
-          '}' +
-          'setTimeout(killPreloader,2000);' +
-          'document.addEventListener("DOMContentLoaded",function(){setTimeout(killPreloader,500);});' +
-          '})();<\/script>';
-        text = text.replace('</body>', preloaderFix + '</body>');
       }
       
       res.writeHead(200, { 'Content-Type': 'application/json' });
