@@ -99,10 +99,13 @@ const server = http.createServer(async (req, res) => {
       
       // Post-process website HTML: injecteer veiligheids-CSS die altijd wint
       if (type === 'website') {
+        // Safety CSS + scroll fix + cursor fix
         var safetyCSS = '<style id="_sp_safety">' +
           'body,section,main,header,article,div,h1,h2,h3,h4,h5,h6,p,span,a,ul,ol,li,nav{opacity:1!important;visibility:visible!important}' +
           '#preloader,#loader,#loading,#splash,.preloader,.loader,.loading,.splash,.intro-screen,.intro{display:none!important}' +
           'canvas{z-index:-1!important}' +
+          'html,body{overflow-x:hidden!important;overflow-y:auto!important;cursor:auto!important}' +
+          '#cursor,#cursor-dot,#cursor-ring,.cursor,.custom-cursor{display:none!important}' +
           '</style>';
         if (text.includes('</head>')) {
           text = text.replace('</head>', safetyCSS + '</head>');
