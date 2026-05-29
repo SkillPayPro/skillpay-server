@@ -97,23 +97,38 @@ const server = http.createServer(async (req, res) => {
 
       let text = await callAnthropic(model, system, prompt, maxTokens);
       
-      // Post-process website HTML: fix opacity:0 buiten keyframes
-      if (type === 'website' && text.includes('<style')) {
-        text = text.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, function(match, css) {
-          var kf = [];
-          var safe = css.replace(/@(?:-webkit-|-moz-|-o-)?keyframes\s+\S+\s*\{(?:[^{}]*|\{[^{}]*\})*\}/g, function(k) {
-            kf.push(k); return '/*KF' + (kf.length-1) + '*/';
+      // Post-process website HTML
+      if (type === 'website') {
+        // 1. Fix opacity:0 buiten keyframes
+        if (text.includes('<style')) {
+          text = text.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, function(match, css) {
+            var kf = [];
+            var safe = css.replace(/@(?:-webkit-|-moz-|-o-)?keyframes[\s\S]*?\{[\s\S]*?\}\s*\}/g, function(k) {
+              kf.push(k); return '/*KF' + (kf.length-1) + '*/';
+            });
+            safe = safe.replace(/opacity\s*:\s*0/g, 'opacity:1');
+            safe = safe.replace(/visibility\s*:\s*hidden/g, 'visibility:visible');
+            safe = safe.replace(/\/\*KF(\d+)\*\//g, function(_, i) { return kf[parseInt(i)]; });
+            return match.replace(css, safe);
           });
-          safe = safe.replace(/opacity\s*:\s*0/g, 'opacity:1');
-          safe = safe.replace(/visibility\s*:\s*hidden/g, 'visibility:visible');
-          safe = safe.replace(/\/\*KF(\d+)\*\//g, function(_, i) { return kf[parseInt(i)]; });
-          return match.replace(css, safe);
-        });
-        // Fix JS opacity=0
+        }
+        // 2. Fix JS opacity=0
         text = text.replace(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/gi, function(match, js) {
-          return match.replace(js, js.replace(/\.style\.opacity\s*=\s*['"]0['"]/g, '.style.opacity="1"')
-                                       .replace(/\.style\.visibility\s*=\s*['"]hidden['"]/g, '.style.visibility="visible"'));
+          var fixed = js
+            .replace(/\.style\.opacity\s*=\s*['"]0['"]/g, '.style.opacity="1"')
+            .replace(/\.style\.visibility\s*=\s*['"]hidden['"]/g, '.style.visibility="visible"');
+          return match.replace(js, fixed);
         });
+        // 3. Preloader altijd na max 2 seconden verwijderen
+        var preloaderFix = '<script id="_sp_preload_fix">(function(){' +
+          'function killPreloader(){' +
+          'var sels=["#preloader","#loader","#loading","#splash",".preloader",".loader",".loading",".splash",".intro-screen","#intro"];' +
+          'sels.forEach(function(s){var el=document.querySelector(s);if(el)el.style.cssText="display:none!important";});' +
+          '}' +
+          'setTimeout(killPreloader,2000);' +
+          'document.addEventListener("DOMContentLoaded",function(){setTimeout(killPreloader,500);});' +
+          '})();<\/script>';
+        text = text.replace('</body>', preloaderFix + '</body>');
       }
       
       res.writeHead(200, { 'Content-Type': 'application/json' });
